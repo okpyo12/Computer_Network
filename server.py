@@ -1,41 +1,106 @@
 from socket import *
+import time
 
-#통신정보 설정
-SERVER_IP = '' #IP는 client에서 127.0.0.1로 지정
-SERVER_PORT = 8080 #PORT번호 8080 지정
-SERVER_SIZE = 1024 #SIZE 1024 지정
-SERVER_URL = 'www.20181704.com'
-SERVER_ADDR = (SERVER_IP, SERVER_PORT)
-# 서버 소켓 설정
-with socket(AF_INET, SOCK_STREAM) as server_socket:
-    server_socket.bind(SERVER_ADDR)  # 주소 바인딩
-    server_socket.listen(1)  # 클라이언트의 요청을 받을 준비
-    # 무한루프 진입
-    while True:
-        client_socket, client_addr = server_socket.accept()  # 수신대기, 접속한 클라이언트 정보 (소켓, 주소) 반환
-        msg = client_socket.recv(SERVER_SIZE).decode('utf-8').split(' ')  # 클라이언트가 보낸 메시지 반환
-        method, url = msg[0], msg[1]
-        print("Cilent가" + url + "에" + "[" + method + "]" + "Method를 요청했습니다")
-        if method == "GET":
-            if SERVER_URL == url:
-                client_socket.send("GET-200 HTTP/200 OK".encode())  # 클라이언트에게 응답
-            else:
-                client_socket.send("GET-400 HTTP/400 BAD REQQUEST".encode())
-        elif method == "HEAD":
-            if SERVER_URL == url:
-                client_socket.send("HEAD-200 HTTP/200 OK".encode())  # 클라이언트에게 응답
-            else:
-                client_socket.send("HEAD-400 HTTP/400 BAD REQQUEST".encode())
-        elif method == "POST":
-            if SERVER_URL == url:
-                client_socket.send("POST-200 HTTP/200 OK".encode())  # 클라이언트에게 응답
-            else:
-                client_socket.send("POST-400 HTTP/400 BAD REQQUEST".encode())
-        elif method == "PUT":
-            if SERVER_URL == url:
-                client_socket.send("PUT-200 HTTP/200 OK".encode())  # 클라이언트에게 응답
-            else:
-                client_socket.send("PUT-400 HTTP/400 BAD REQQUEST".encode())
+HOST = "127.0.0.1"
+PORT = 8080
+SIZE = 1024
+
+def find_method(method):
+    method = method.split(' ')
+    return method[0]
+
+def find_url(url):
+    url = url.split(' ')
+    return url[1][0:-1]
+
+def ManageDB(status, method, body):
+    arr = []
+    if ':' in body:
+        key, value = body.split(':')
+    if body != '':
+        if status == 'CREATED':
+            with open("DataBase.txt", "a") as f:
+                f.write(f"{body}\n")
+            return 'Created DB'
+        elif status == 'OK':
+            with open("DataBase.txt", "r") as f:
+                lines = f.readlines()
+            with open("DataBase.txt", "w") as f:
+                for line in lines:
+                    if line.rstrip()[0] != key:
+                        f.write(line)
+                    else:
+                        f.write(f"{body}\n")
+            return 'Update DataBase'
+        elif status == 'BAD_REQUEST':
+            return 'BAD_REQUEST'
+        elif status == 'NOT_FOUND':
+            return 'NOT_FOUND'
         else:
-            client_socket.send("USE CORRECT METHOD".encode())
-        client_socket.close()  # 클라이언트 소켓 종료
+            return 'BAD_REQUEST'
+    else:
+        if status == 'OK':
+            if method == 'GET':
+                with open("DataBase.txt", "r") as f:
+                    lines = f.readlines()
+                    for line in lines:
+                        arr.append(line.rstrip())
+                    return arr
+        elif status == 'CONTINUE':
+            return ''
+        else:
+            return 'BAD_REQUEST'
+
+def router(url, method, body):
+    if '/' in url:
+        host, path = url.split('/')
+        if host == HOST:
+            if method == 'HEAD': 
+                return response('CONTINUE', method, body)
+            if method == 'GET': return response('OK', method, body) 
+            if method == 'POST': 
+                if path == 'create': 
+                    return response('CREATED', method, body) 
+                else: return response('BAD_REQUEST', method, body) 
+            elif method == 'PUT': 
+                if path == 'update': return response('OK', method, body) 
+                else: return response('BAD_REQUEST', method, body) 
+            else: return response('NOT_FOUND', method, body)
+        else:
+            return ''
+    else:
+        return response('NOT_FOUND', method, body)
+
+def response(status, method, body):
+    date = time.strftime('%a, %d %b %Y %H:%M:%S GMT', time.localtime(time.time()))
+    if status == 'CONTINUE':
+        DBbody = ManageDB(status, method, body)
+        return f"HTTP/1.1 100 CONTINUE\r\nDate: {date}\r\nContent-Type: text/html\r\nConnection: keep-alive\r\nContent-Length: {len(body)}\r\n\n{DBbody}"
+    if status == 'OK':
+        DBbody = ManageDB(status, method, body)
+        return f"HTTP/1.1 200 OK\r\nDate: {date}\r\nContent-Type: text/html\r\nConnection: keep-alive\r\nContent-Length: {len(body)}\r\n\n{DBbody}"
+    if status == 'CREATED':
+        DBbody = ManageDB(status, method, body)
+        return f"HTTP/1.1 201 CREATED\r\nDate: {date}\r\nContent-Type: text/html\r\nConnection: keep-alive\r\nContent-Length: {len(body)}\r\n\n{DBbody}"
+    if status == 'BAD_REQUEST':
+        DBbody = ManageDB(status, method, body)
+        return f"HTTP/1.1 400 BAD_REQUEST\r\nDate: {date}\r\nContent-Type: text/html\r\nConnection: keep-alive\r\nContent-Length: {len(body)}\r\n\n{DBbody}"
+    if status == 'NOT_FOUND':
+        DBbody = ManageDB(status, method, body)
+        return f"HTTP/1.1 404 NOT_FOUND\r\nDate: {date}\r\nContent-Type: text/html\r\nConnection: keep-alive\r\nContent-Length: {len(body)}\r\n\n{DBbody}"
+    
+with socket(AF_INET, SOCK_STREAM) as server_socket: # 소켓 객체 생성
+    server_socket.bind((HOST, PORT))  # 생성한 소켓에 HOST와 PORT 바인딩
+    server_socket.listen(1)  # 서버가 클라이언트의 접속을 허용
+
+    while True:
+        connectionsocket, client_addr = server_socket.accept()  # accept 함수에서 대기하다가 클라이언트가 접속하면 새로운 소켓을 리턴
+        data = connectionsocket.recv(SIZE).decode('utf-8')  # client에서 보내는 데이터 받기
+        print(data)
+        print('\n---------------------------------------\n')
+        data = data.split('\n')
+        method = find_method(data[0])
+        url = find_url(data[1])
+        body = data[-1]
+        res_message = router(url, method, body)
+        connectionsocket.send(res_message.encode('utf-8'))  # 데이터 인코딩하여 보내기
